@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prop Firm Trading Journal</title>
+
+<style>
+body{
+  background:#020617;
+  color:#e5e7eb;
+  font-family:Arial,sans-serif;
+  padding:20px;
+}
+.container{max-width:900px;margin:auto;}
+h1,h2{color:#38bdf8;text-align:center;}
+.card{
+  background:#0f172a;
+  padding:15px;
+  border-radius:12px;
+  margin-top:15px;
+}
+label{display:block;margin-top:10px;}
+input,select,textarea,button{
+  width:100%;
+  padding:10px;
+  margin-top:5px;
+  background:#020617;
+  color:white;
+  border:none;
+  border-radius:6px;
+}
+.checkbox label{display:flex;gap:8px;align-items:center;}
+button{background:#38bdf8;font-size:16px;margin-top:15px;cursor:pointer;}
+.alert{text-align:center;font-weight:bold;margin-top:10px;}
+table{width:100%;margin-top:10px;border-collapse:collapse;}
+th,td{border-bottom:1px solid #334155;padding:6px;text-align:center;font-size:13px;}
+canvas{background:#020617;border-radius:10px;margin-top:10px;}
+</style>
+</head>
+
+<body>
+<div class="container">
+<h1>📒 Prop Firm Trading Journal</h1>
+
+<!-- PROP MODE -->
+<div class="card">
+<label>Account Mode
+<select id="mode">
+<option>Phase 1</option>
+<option>Phase 2</option>
+<option>Funded</option>
+</select></label>
+</div>
+
+<!-- JOURNAL ENTRY -->
+<div class="card">
+<label>Date <input type="date" id="date"></label>
+<label>Pair <input id="pair" placeholder="EUR/USD"></label>
+
+<label>Buy / Sell
+<select id="type"><option>Buy</option><option>Sell</option></select></label>
+
+<label>P/L % <input type="number" step="0.1" id="pl" placeholder="+1 or -0.5"></label>
+
+<div class="checkbox">
+<label><input type="checkbox" class="rule">Setup Valid</label>
+<label><input type="checkbox" class="rule">Patient Entry</label>
+<label><input type="checkbox" class="rule">Risk Respected</label>
+<label><input type="checkbox" class="rule">Emotion Controlled</label>
+</div>
+
+<button onclick="saveTrade()">Save Trade</button>
+<div class="alert" id="alert"></div>
+</div>
+
+<!-- DASHBOARD -->
+<h2>📊 Dashboard</h2>
+<div class="card" id="stats"></div>
+
+<!-- EQUITY CURVE -->
+<h2>📈 Equity Curve</h2>
+<div class="card">
+<canvas id="equity" height="200"></canvas>
+</div>
+
+<!-- RECORDS -->
+<h2>📜 Journal Records</h2>
+<div class="card">
+<table>
+<thead>
+<tr>
+<th>Date</th><th>Pair</th><th>Type</th><th>P/L %</th><th>Score</th><th>Mode</th>
+</tr>
+</thead>
+<tbody id="records"></tbody>
+</table>
+</div>
+
+</div>
+
+<script>
+let trades = JSON.parse(localStorage.getItem("trades")) || [];
+
+function saveTrade(){
+  let rules = document.querySelectorAll(".rule");
+  let score = [...rules].filter(r=>r.checked).length / rules.length * 100;
+  let trade = {
+    date: date.value,
+    pair: pair.value,
+    type: type.value,
+    pl: Number(pl.value),
+    score,
+    mode: mode.value
+  };
+  trades.push(trade);
+  localStorage.setItem("trades", JSON.stringify(trades));
+  checkLimits();
+  updateAll();
+  alert("Trade Saved");
+}
+
+function checkLimits(){
+  let today = new Date().toISOString().slice(0,10);
+  let todayPL = trades.filter(t=>t.date===today)
+    .reduce((a,b)=>a+b.pl,0);
+
+  let box = document.getElementById("alert");
+  if(todayPL <= -1){
+    box.innerHTML="🚫 DAILY LOSS LIMIT HIT (-1%). STOP.";
+    box.style.color="red";
+  } else if(todayPL >= 2){
+    box.innerHTML="🟢 DAILY PROFIT TARGET HIT (+2%). STOP.";
+    box.style.color="lime";
+  } else box.innerHTML="";
+}
+
+function updateAll(){
+  updateStats();
+  updateTable();
+  drawEquity();
+}
+
+function updateStats(){
+  let wins = trades.filter(t=>t.pl>0).length;
+  let avgScore = trades.reduce((a,b)=>a+b.score,0)/trades.length||0;
+  let totalPL = trades.reduce((a,b)=>a+b.pl,0);
+
+  stats.innerHTML=`
+  <table>
+  <tr><td>Total Trades</td><td>${trades.length}</td></tr>
+  <tr><td>Wins</td><td>${wins}</td></tr>
+  <tr><td>Win Rate</td><td>${((wins/trades.length)*100||0).toFixed(1)}%</td></tr>
+  <tr><td>Total P/L</td><td>${totalPL.toFixed(2)}%</td></tr>
+  <tr><td>Avg Discipline</td><td>${avgScore.toFixed(1)}%</td></tr>
+  </table>`;
+}
+
+function updateTable(){
+  records.innerHTML="";
+  trades.forEach(t=>{
+    records.innerHTML+=`
+    <tr>
+    <td>${t.date}</td>
+    <td>${t.pair}</td>
+    <td>${t.type}</td>
+    <td style="color:${t.pl>=0?'lime':'red'}">${t.pl}%</td>
+    <td>${t.score.toFixed(0)}%</td>
+    <td>${t.mode}</td>
+    </tr>`;
+  });
+}
+
+function drawEquity(){
+  let c=document.getElementById("equity");
+  let ctx=c.getContext("2d");
+  ctx.clearRect(0,0,c.width,c.height);
+
+  let equity=[0];
+  trades.forEach(t=>equity.push(equity[equity.length-1]+t.pl));
+  let max=Math.max(...equity,5);
+  let min=Math.min(...equity,-5);
+
+  ctx.strokeStyle="#38bdf8";
+  ctx.beginPath();
+  equity.forEach((e,i)=>{
+    let x=i*(c.width/(equity.length-1));
+    let y=c.height-(e-min)/(max-min)*c.height;
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+}
+
+updateAll();
+checkLimits();
+</script>
+
+</body>
+  </html>
